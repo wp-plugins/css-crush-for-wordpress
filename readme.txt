@@ -10,17 +10,36 @@ License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
 == Description ==
 
-An extensible PHP based CSS preprocessor for WordPress. 
+CSS allow you to do lots of things, but some features are missing to developers. What about variables, constants, and general faster syntax? Normal CSS can not do that, that is why you have preprocessors, like CSS Crush. 
 
-**Features**
+CSS Crush for WordPress allows the use of variables on CSS files. 
 
-* Vendor prefixes are automatically generated with aliases
+This plugin will automaticly process all your theme's stylesheets for you! No configuration needed. However, you can customize it from the Settings page.
+
+By default your stylesheet will be minified, cached and have it's vendor prefixes automatically generated.
+
+Prefix example:
+
+`
+/* Before */
+div { background: red linear-gradient( left, red, white ); }
+
+/* After */
+div {
+  background: red -webkit-linear-gradient( left, red, white );
+  background: red -moz-linear-gradient( left, red, white );
+  background: red -o-linear-gradient( left, red, white );
+  background: red linear-gradient( left, red, white );
+}
+`
+
+** More Features **
+
 * Declare variables in your CSS
 * Direct @import
-* A small collection of custom functions are built-in
+* A small collection of custom math functions are built-in
 * Block nesting
 * The experimental :any pseudo class is supported
-* all CSS Crush output is minified and cached
 
 *CSS Crush version: 1.5.3*
 
