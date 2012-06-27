@@ -22,6 +22,8 @@ An extensible PHP based CSS preprocessor for WordPress.
 * The experimental :any pseudo class is supported
 * all CSS Crush output is minified and cached
 
+CSS Crush version: 1.5.3
+
 For a full tour of features you can go to <a href="http://the-echoplex.net/csscrush/">http://the-echoplex.net/csscrush/</a>.
 
 = Translations = 
