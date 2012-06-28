@@ -12,13 +12,13 @@ License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
 CSS allow you to do lots of things, but some features are missing to developers. What about variables, constants, and general faster syntax? Normal CSS can not do that, that is why you have preprocessors, like CSS Crush. 
 
-CSS Crush for WordPress allows the use of variables on CSS files. 
+CSS Crush for WordPress allows the use of variables in CSS files. 
 
 This plugin will automaticly process all your theme's stylesheets for you! No configuration needed. However, you can customize it from the Settings page.
 
-By default your stylesheet will be minified, cached and have it's vendor prefixes automatically generated.
+By default your stylesheet will be *minified*, *cached* and have it's vendor *prefixes automatically generated*.
 
-Prefix example:
+**example of a generated prefixes**
 
 `
 /* Before */
@@ -33,7 +33,23 @@ div {
 }
 `
 
-** More Features **
+**example of the use of variables**
+
+`
+/* Defining variables */
+@define {
+	brand-blue: #C1D9F5;	
+	helvetica: "Helvetica Neue", Helvetica, Arial, sans-serif;
+	
+}
+
+ul, p {
+	font-family: $( helvetica );
+	background: $( brand-blue );
+}
+`
+
+**More Features**
 
 * Declare variables in your CSS
 * Direct @import
@@ -47,7 +63,7 @@ For a full list of features please visit <a href="http://the-echoplex.net/csscru
 
 **Related Links:**
 
-* http://www.codepress.nl/plugins/codepress-admin-columns/
+* http://www.codepress.nl/plugins/
 
 = Translations = 
 

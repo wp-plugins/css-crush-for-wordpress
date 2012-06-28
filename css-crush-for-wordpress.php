@@ -2,7 +2,7 @@
 /*
 Plugin Name: 		CSS Crush for WordPress
 Version: 			0.1
-Description: 		An extensible PHP based CSS preprocessor for WordPress.
+Description: 		Integrates the CSS Crush preprocessor into your website: upload, activate, and you're done. No further configuration needed. 
 Author: 			Codepress
 Author URI: 		http://www.codepress.nl
 Text Domain: 		css-crush-for-wordpress
