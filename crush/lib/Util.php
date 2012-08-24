@@ -20,9 +20,15 @@ class csscrush_util {
 	}
 
 
+	public static function strEndsWith ( $haystack, $needle ) {
+
+		return substr( $haystack, -strlen( $needle ) ) === $needle;
+	}
+
+
 	public static function normalizePath ( $path, $strip_ms_dos = false ) {
 
-		$path = rtrim( str_replace( '\\', '/', $path ), '/' );
+		$path = rtrim( preg_replace( '![\\\\/]+!', '/', $path ), '/' );
 
 		if ( $strip_ms_dos ) {
 			$path = preg_replace( '!^[a-z]\:!i', '', $path );
@@ -143,9 +149,11 @@ class csscrush_util {
 		// If the delimiter is one character do a simple split
 		// Otherwise do a regex split
 		if ( 1 === strlen( $delim ) ) {
+
 			$match_obj->list = explode( $delim, $match_obj->string );
 		}
 		else {
+
 			$match_obj->list = preg_split( '!' . $delim . '!', $match_obj->string );
 		}
 
@@ -154,7 +162,11 @@ class csscrush_util {
 		}
 
 		// Filter out empties
-		$match_obj->list = array_filter( $match_obj->list );
+		foreach( $match_obj->list as $key => &$item ) {
+			if ( $item === '' ) {
+				unset( $match_obj->list[$key] );
+			}
+		}
 
 		if ( $fold_in ) {
 
@@ -166,15 +178,14 @@ class csscrush_util {
 	}
 
 
-	public static function matchBrackets ( $str, $brackets = array( '(', ')' ),
-				$search_pos = 0, $capture_text = false ) {
+	public static function matchBrackets ( $str, $brackets = array( '(', ')' ), $search_pos = 0, $capture_text = false ) {
 
 		list( $opener, $closer ) = $brackets;
 		$openings = array();
 		$closings = array();
 		$brake = 50; // Set a limit in the case of errors
 
-		$match = new stdclass();
+		$match = (object) array();
 
 		$start_index = strpos( $str, $opener, $search_pos );
 		$close_index = strpos( $str, $closer, $search_pos );
@@ -238,7 +249,7 @@ class csscrush_util {
 
 	public static function matchAllBrackets ( $str, $pair = '()', $offset = 0 ) {
 
-		$match_obj = new stdclass();
+		$match_obj = (object) array();
 		$match_obj->string = $str;
 		$match_obj->raw = $str;
 		$match_obj->matches = array();
@@ -313,15 +324,14 @@ class csscrush_string {
 
 	public $token;
 	public $value;
-	public $raw;
 	public $quoteMark;
 
 	public function __construct ( $token ) {
 
 		$this->token = trim( $token );
-		$this->raw = csscrush::$storage->tokens->strings[ $this->token ];
-		$this->value = trim( $this->raw, '\'"' );
-		$this->quoteMark = $this->raw[0];
+		$raw = csscrush::$storage->tokens->strings[ $this->token ];
+		$this->value = trim( $raw, '\'"' );
+		$this->quoteMark = $raw[0];
 	}
 
 	public function update ( $newValue ) {
@@ -337,9 +347,9 @@ class csscrush_string {
  */
 class csscrush_version {
 
-	public $major;
-	public $minor;
-	public $revision;
+	public $major = 0;
+	public $minor = 0;
+	public $revision = 0;
 	public $extra;
 
 	public function __construct ( $version_string ) {
@@ -377,6 +387,27 @@ class csscrush_version {
 		}
 
 		return $out;
+	}
+
+	public function compare ( $version_string ) {
+
+		$LESS  = -1;
+		$MORE  = 1;
+		$EQUAL = 0;
+
+		$test = new csscrush_version( $version_string );
+
+		foreach ( array( 'major', 'minor', 'revision' ) as $level ) {
+
+			if ( $this->{ $level } < $test->{ $level } ) {
+				return $LESS;
+			}
+			elseif ( $this->{ $level } > $test->{ $level } ) {
+				return $MORE;
+			}
+		}
+
+		return $EQUAL;
 	}
 }
 

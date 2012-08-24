@@ -1,24 +1,26 @@
 === CSS Crush for WordPress ===
-Contributors: codepress, tschutter
+Contributors: codepress, tschutter, davidmosterd
 Donate link: https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=ZDZRSYLQ4Z76J
 Tags: css, crush, wordpress, pre-processor, minify
 Requires at least: 3.1
 Tested up to: 3.4
-Stable tag: 0.1
+Stable tag: 0.2
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
+Integrates an extensible CSS preprocessor for WordPress: upload, activate, and you're done. No further configuration needed. 
+
 == Description ==
 
-CSS allow you to do lots of things, but some features are missing to developers. What about variables, constants, and general faster syntax? Normal CSS can not do that, that is why you have preprocessors, like CSS Crush. 
+CSS allows you to do lots of things, but some features are missing to developers. What about variables, constants, and general faster syntax? Normal CSS can not do that, that is why you have preprocessors, like CSS Crush. 
 
 CSS Crush for WordPress allows the use of variables in CSS files. 
 
 This plugin will automaticly process all your theme's stylesheets for you! No configuration needed. However, you can customize it from the Settings page.
 
-By default your stylesheet will be *minified*, *cached* and have it's vendor *prefixes automatically generated*.
+By default your stylesheet will be *minified*, *cached* and have it's *vendor prefixes automatically generated*.
 
-**example of a generated prefixes**
+**examples of generated prefixes**
 
 `
 /* Before */
@@ -33,19 +35,18 @@ div {
 }
 `
 
-**example of the use of variables**
+**example with the use of variables**
 
 `
 /* Defining variables */
 @define {
 	brand-blue: #C1D9F5;	
-	helvetica: "Helvetica Neue", Helvetica, Arial, sans-serif;
-	
+	helvetica: "Helvetica Neue", Helvetica, Arial, sans-serif;	
 }
 
 ul, p {
 	font-family: $( helvetica );
-	background: $( brand-blue );
+	color: $( brand-blue );
 }
 `
 
@@ -57,7 +58,7 @@ ul, p {
 * Block nesting
 * The experimental :any pseudo class is supported
 
-*CSS Crush version: 1.5.3*
+*Current CSS Crush version: 1.6.1*
 
 For a full list of features please visit <a href="http://the-echoplex.net/csscrush/">http://the-echoplex.net/csscrush/</a>.
 
@@ -85,6 +86,10 @@ NO. We just ported it to WordPress. For more info on the CSS Crush itself, visit
 
 Have a look at the tour section: <a href="http://the-echoplex.net/csscrush/">http://the-echoplex.net/csscrush/</a>.
 
+= Where are the cached files stored? =
+
+CSS Crush generates a new (cached) stylesheet in the same path as the original. The new files will look like yourstylesheet.crush.css
+
 = I would like to contribute to CSS Crush =
 
 You can fork the original CSS Crush code on Github and submit patches: <a href="https://github.com/peteboere/css-crush">https://github.com/peteboere/css-crush</a>
@@ -94,6 +99,10 @@ You can fork the original CSS Crush code on Github and submit patches: <a href="
 1. Settings page
 
 == Changelog ==
+
+= 0.2 =
+
+* Updated CSS Crush Core to v1.6.1
 
 = 0.1 =
 

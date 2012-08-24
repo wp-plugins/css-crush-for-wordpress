@@ -1,10 +1,11 @@
 <?php
 /*
 Plugin Name: 		CSS Crush for WordPress
-Version: 			0.1
-Description: 		Integrates the CSS Crush preprocessor into your website: upload, activate, and you're done. No further configuration needed. 
+Version: 			0.2
+Description: 		Integrates an extensible CSS preprocessor for WordPress: upload, activate, and you're done. No further configuration needed. 
 Author: 			Codepress
 Author URI: 		http://www.codepress.nl
+Plugin URI: 		http://wordpress.org/extend/plugins/css-crush-for-wordpress/
 Text Domain: 		css-crush-for-wordpress
 Domain Path: 		/languages
 License:			GPLv2
@@ -25,7 +26,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-define( 'CPCC_VERSION', 	'0.1' );
+define( 'CPCC_VERSION', 	'0.2' );
 define( 'CPCC_TEXTDOMAIN',  'css-crush-for-wordpress' );
 define( 'CPCC_SLUG', 		'css-crush' );
 define( 'CPCC_URL', 		plugins_url('', __FILE__) );

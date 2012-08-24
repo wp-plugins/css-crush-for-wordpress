@@ -11,10 +11,10 @@ class csscrush_importer {
 	public static function save ( $data ) {
 
 		$process = csscrush::$process;
-		$options = csscrush::$options;
+		$options = $process->options;
 
 		// No saving if caching is disabled, return early
-		if ( ! $options[ 'cache' ] ) {
+		if ( ! $options->cache ) {
 			return;
 		}
 
@@ -30,7 +30,7 @@ class csscrush_importer {
 
 		$config = csscrush::$config;
 		$process = csscrush::$process;
-		$options = csscrush::$options;
+		$options = $process->options;
 		$regex = csscrush_regex::$patt;
 		$hostfile = $process->input;
 
@@ -52,11 +52,16 @@ class csscrush_importer {
 			$stream = file_get_contents( $prependFile ) . $stream;
 		}
 
-		$stream = csscrush::extractComments( $stream );
-		$stream = csscrush::extractStrings( $stream );
+		// If @charset is set store it
+		if ( preg_match( $regex->charset, $stream, $m ) ) {
+			$stream = preg_replace( $regex->charset, '', $stream );
+			$process->charset = $m[2];
+		}
+
+		csscrush::prepareStream( $stream );
 
 		// If rewriting URLs as absolute we need to do some extra work
-		if ( $options[ 'rewrite_import_urls' ] === 'absolute' ) {
+		if ( $options->rewrite_import_urls === 'absolute' ) {
 
 			// Normalize the @import statements in this case
 			foreach ( csscrush_regex::matchAll( $regex->import, $stream ) as $match ) {
@@ -113,12 +118,10 @@ class csscrush_importer {
 			}
 
 			// Create import object
-			$import = new stdclass();
+			$import = (object) array();
 			$import->url = $url;
 			$import->mediaContext = $media_context;
 			$import->hostDir = $process->inputDir;
-
-			// csscrush::log( $import );
 
 			// Check to see if the url is root relative
 			// Flatten import path for convenience
@@ -132,7 +135,7 @@ class csscrush_importer {
 			// Get the import contents, if unsuccessful just continue with the import line removed
 			if ( ! ( $import->content = @file_get_contents( $import->path ) ) ) {
 
-				csscrush::log( "Import file '$import->url' not found at '$import->path'" );
+				csscrush::log( "Import file '$import->url' not found" );
 				$stream = $pre_statement . $post_statement;
 				continue;
 			}
@@ -140,10 +143,7 @@ class csscrush_importer {
 			// Import file opened successfully so we process it:
 			//   - We need to resolve import statement urls in all imported files since
 			//     they will be brought inline with the hostfile
-
-			// Start with extracting strings and comments in the import
-			$import->content = csscrush::extractComments( $import->content );
-			$import->content = csscrush::extractStrings( $import->content );
+			csscrush::prepareStream( $import->content );
 
 			$import->dir = dirname( $import->url );
 
@@ -217,7 +217,7 @@ class csscrush_importer {
 			}
 
 			// Optionally rewrite relative url and custom function data-uri references
-			if ( $options[ 'rewrite_import_urls' ] ) {
+			if ( $options->rewrite_import_urls ) {
 				$import->content = self::rewriteImportUrls( $import );
 			}
 
@@ -265,7 +265,6 @@ class csscrush_importer {
 				$import_statement = str_replace( $full_match, $the_space . $string_label, $import_statement );
 			}
 		}
-		// csscrush::log( 'Normalised: ' . $import_statement );
 
 		return $import_statement;
 	}
@@ -384,13 +383,15 @@ class csscrush_importer {
 		$url = csscrush_util::normalizePath( $url );
 
 		// No rewrite if:
-		//   - $url begins with a variable, e.g '$('
-		//   - $url path is absolute or begins with slash
 		//   - $url is an empty string
+		//   - $url path is absolute or begins with slash
+		//   - $url begins with a variable, e.g '$('
+		//   - $url is a data uri
 		if (
-			empty( $url ) ||
+			$url === '' ||
 			strpos( $url, '/' ) === 0 ||
 			strpos( $url, '$(' ) === 0 ||
+			strpos( $url, 'data:' ) === 0 ||
 			preg_match( $regex->absoluteUrl, $url )
 		) {
 

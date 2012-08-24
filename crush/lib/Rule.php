@@ -5,13 +5,11 @@
  *
  */
 
-class csscrush_rule implements IteratorAggregate {
+class csscrush_rule implements IteratorAggregate, Countable {
 
 	public $vendorContext;
 	public $isNested;
 	public $label;
-
-	// public $abstractName;
 
 	public $properties = array();
 
@@ -21,12 +19,57 @@ class csscrush_rule implements IteratorAggregate {
 	public $comments = array();
 
 	// Arugments passed in via 'extend' property
-	public $extendsArgs = array();
-
-	// Record of actual inherited rules
-	public $extends = array();
+	public $extendArgs = array();
 
 	public $_declarations = array();
+
+	// A table for storing the declarations as data for this() referencing
+	public $localData = array();
+
+	// A table for storing the declarations as data for external query() referencing
+	public $data = array();
+
+	public function declarationCheckin ( $prop, $value, &$pairs ) {
+
+		if ( $prop !== '' && $value !== '' ) {
+
+			// First resolve query() calls that reference earlier rules
+			if ( preg_match( csscrush_regex::$patt->queryFunction, $value ) ) {
+
+				csscrush_function::executeCustomFunctions( $value,
+					csscrush_regex::$patt->queryFunction, array(
+						'query' => array( $this, 'cssQueryFunction' ),
+					), $prop );
+			}
+
+			if ( strpos( $prop, 'data-' ) === 0 ) {
+
+				// If it's with data prefix, we don't want to print it
+				// Just remove the prefix
+				$prop = substr( $prop, strlen( 'data-' ) );
+
+				// On first pass we want to store data properties on $this->data,
+				// as well as on local
+				$this->data[ $prop ] = $value;
+			}
+			else {
+
+				// Add to the stack
+				$pairs[] = array( $prop, $value );
+			}
+
+			// Set on $this->localData
+			$this->localData[ $prop ] = $value;
+
+			// Unset on data tables if the value has a this() call:
+			//   - Restriction to avoid circular references
+			if ( preg_match( csscrush_regex::$patt->thisFunction, $value ) ) {
+
+				unset( $this->localData[ $prop ] );
+				unset( $this->data[ $prop ] );
+			}
+		}
+	}
 
 	public function __construct ( $selector_string = null, $declarations_string ) {
 
@@ -40,8 +83,11 @@ class csscrush_rule implements IteratorAggregate {
 
 			// Remove and store comments that sit above the first selector
 			// remove all comments between the other selectors
-			preg_match_all( $regex->commentToken, $selectors_match->list[0], $m );
-			$this->comments = $m[0];
+			if ( strpos( $selectors_match->list[0], '___c' ) !== false ) {
+
+				preg_match_all( $regex->commentToken, $selectors_match->list[0], $m );
+				$this->comments = $m[0];
+			}
 
 			// Strip any other comments then create selector instances
 			foreach ( $selectors_match->list as $selector ) {
@@ -70,6 +116,9 @@ class csscrush_rule implements IteratorAggregate {
 		// Need to split safely as there are semi-colons in data-uris
 		$declarations_match = csscrush_util::splitDelimList( $declarations_string, ';', true );
 
+		// First create a simple array of all properties and value pairs in raw state
+		$pairs = array();
+
 		// Split declarations in to property/value pairs
 		foreach ( $declarations_match->list as $declaration ) {
 
@@ -79,8 +128,8 @@ class csscrush_rule implements IteratorAggregate {
 			// Extract the property part of the declaration
 			$colonPos = strpos( $declaration, ':' );
 			if ( $colonPos === false ) {
-				// If there is no colon it's malformed
-				continue;
+
+				continue; // If there's no colon it's malformed
 			}
 			$prop = trim( substr( $declaration, 0, $colonPos ) );
 
@@ -95,21 +144,44 @@ class csscrush_rule implements IteratorAggregate {
 
 					// Add mixin declarations to the stack
 					while ( $mixin_declaration = array_shift( $mixin_declarations ) ) {
-						$this->addDeclaration( $mixin_declaration['property'], $mixin_declaration['value'] );
+
+						$this->declarationCheckin(
+							$mixin_declaration['property'], $mixin_declaration['value'], $pairs );
 					}
 				}
 			}
 			elseif ( $prop === 'extends' ) {
 
-				// Extends is a special case
+				// Extends are also a special case
 				$this->setExtendSelectors( $value );
 			}
 			else {
 
-				// Add declaration to the stack
+				$this->declarationCheckin( $prop, $value, $pairs );
+			}
+		}
+
+		// Bind declaration objects on the rule
+		foreach ( $pairs as $pair ) {
+
+			list( $prop, $value ) = $pair;
+
+			// Resolve self references, aka this()
+			csscrush_function::executeCustomFunctions( $value,
+					csscrush_regex::$patt->thisFunction, array(
+						'this'  => array( $this, 'cssThisFunction' ),
+					), $prop );
+
+			if ( trim( $value ) !== '' ) {
+
+				// Add declaration and update the data table
+				$this->data[ $prop ] = $value;
 				$this->addDeclaration( $prop, $value );
 			}
 		}
+
+		// localData no longer required
+		$this->localData = null;
 	}
 
 	public function __set ( $name, $value ) {
@@ -127,6 +199,85 @@ class csscrush_rule implements IteratorAggregate {
 		if ( $name === 'declarations' ) {
 			return $this->_declarations;
 		}
+	}
+
+	public function cssThisFunction ( $input, $fn_name ) {
+
+		$args = csscrush_function::parseArgsSimple( $input );
+
+		if ( isset( $this->localData[ $args[0] ] ) ) {
+
+			return $this->localData[ $args[0] ];
+		}
+		elseif ( isset( $args[1] ) ) {
+
+			return $args[1];
+		}
+		else {
+
+			return '';
+		}
+	}
+
+	public function cssQueryFunction ( $input, $fn_name, $call_property ) {
+
+		$result = '';
+		$args = csscrush_function::parseArgs( $input );
+
+		if ( count( $args ) < 1 ) {
+			return $result;
+		}
+
+		$abstracts =& csscrush::$process->abstracts;
+		$mixins =& csscrush::$process->mixins;
+		$selectorRelationships =& csscrush::$process->selectorRelationships;
+
+		// Resolve arguments
+		$name = array_shift( $args );
+		$property = $call_property;
+		if ( isset( $args[0] ) ) {
+			if ( $args[0] !== 'default' ) {
+				$property = array_shift( $args );
+			}
+			else {
+				array_shift( $args );
+			}
+		}
+		$default = isset( $args[0] ) ? $args[0] : null;
+
+		// csscrush::log( array( $name, $property, $default ), 'query args' );
+
+		// Try to match a abstract rule first
+		if ( preg_match( csscrush_regex::$patt->name, $name ) ) {
+
+			// Search order: abstracts, mixins, rules
+			if ( isset( $abstracts[ $name ]->data[ $property ] ) ) {
+
+				$result = $abstracts[ $name ]->data[ $property ];
+			}
+			elseif ( isset( $mixins[ $name ]->data[ $property ] ) ) {
+
+				$result = $mixins[ $name ]->data[ $property ];
+			}
+			elseif ( isset( $selectorRelationships[ $name ]->data[ $property ] ) ) {
+
+				$result = $selectorRelationships[ $name ]->data[ $property ];
+			}
+		}
+		else {
+
+			// Look for a rule match
+			$name = csscrush_selector::makeReadableSelector( $name );
+			if ( isset( $selectorRelationships[ $name ]->data[ $property ] ) ) {
+
+				$result = $selectorRelationships[ $name ]->data[ $property ];
+			}
+		}
+
+		if ( $result === '' && ! is_null( $default ) ) {
+			$result = $default;
+		}
+		return $result;
 	}
 
 	public function updatePropertyTable () {
@@ -383,74 +534,84 @@ class csscrush_rule implements IteratorAggregate {
 
 	public function setExtendSelectors ( $raw_value ) {
 
-		$abstracts = csscrush::$process->abstracts;
-		$selectorRelationships = csscrush::$process->selectorRelationships;
+		$abstracts =& csscrush::$process->abstracts;
+		$selectorRelationships =& csscrush::$process->selectorRelationships;
 
 		// Pass extra argument to trim the returned list
 		$args = csscrush_util::splitDelimList( $raw_value, ',', true, true );
 
 		// Reset if called earlier, last call wins by intention
-		$this->extendsArgs = array();
+		$this->extendArgs = array();
 
 		foreach ( $args->list as $arg ) {
 
-			if ( preg_match( csscrush_regex::$patt->name, $arg ) ) {
-
-				// A regular name: an element name or an abstract rule name
-				$this->extendsArgs[ $arg ] = true;
-			}
-			else {
-
-				// Not a regular name: Some kind of selector so normalize it for later comparison
-				$readable_selector = csscrush_selector::makeReadableSelector( $arg );
-
-				$this->extendsArgs[ $readable_selector ] = true;
-			}
-		}
-		// csscrush::log( $this->extendsArgs );
-	}
-
-	public static function recursiveExtend ( $rule ) {
-		foreach ( $rule->extends as $parent_rule ) {
-			$parent_rule->addSelectors( $rule->selectorList );
-			self::recursiveExtend( $parent_rule );
+			$this->extendArgs[] = new csscrush_extendArg( $arg );
 		}
 	}
 
 	public function applyExtendables () {
 
-		$abstracts = csscrush::$process->abstracts;
-		$selectorRelationships = csscrush::$process->selectorRelationships;
+		if ( ! $this->extendArgs ) {
+			return;
+		}
 
-		foreach ( $this->extendsArgs as $name => $bool ) {
+		$abstracts =& csscrush::$process->abstracts;
+		$selectorRelationships =& csscrush::$process->selectorRelationships;
+
+		// Filter the extendArgs list to usable references
+		foreach ( $this->extendArgs as $key => $extend_arg ) {
+
+			$name = $extend_arg->name;
 
 			if ( isset( $abstracts[ $name ] ) ) {
 
-				$parent_abstract_rule = $abstracts[ $name ];
-
-				// Match found in abstract rules
-				$parent_abstract_rule->addSelectors( $this->selectorList );
-
-				// Store a reference to directly extended rules
-				$this->extends[] = $parent_abstract_rule;
-
-				// Recursively inherit
-				self::recursiveExtend( $parent_abstract_rule );
+				$parent_rule = $abstracts[ $name ];
+				$extend_arg->pointer = $parent_rule;
 
 			}
-			else if ( isset( $selectorRelationships[ $name ] ) ) {
+			elseif ( isset( $selectorRelationships[ $name ] ) ) {
 
 				$parent_rule = $selectorRelationships[ $name ];
+				$extend_arg->pointer = $parent_rule;
 
-				// Match found in selectorRelationships
-				$parent_rule->addSelectors( $this->selectorList );
-
-				// Store a reference to directly extended rules
-				$this->extends[] = $parent_rule;
-
-				// Recursively inherit
-				self::recursiveExtend( $parent_rule );
 			}
+			else {
+
+				// Unusable, so unset it
+				unset( $this->extendArgs[ $key ] );
+			}
+		}
+
+		// Create a stack of all parent rule args
+		$parent_extend_args = array();
+		foreach ( $this->extendArgs as $extend_arg ) {
+			$parent_extend_args = array_merge( $parent_extend_args, $extend_arg->pointer->extendArgs );
+		}
+
+		// Merge this rule's extendArgs with parent extendArgs
+		$this->extendArgs = array_merge( $this->extendArgs, $parent_extend_args );
+
+		// Filter now?
+
+		// Add this rule's selectors to all extendArgs
+		foreach ( $this->extendArgs as $extend_arg ) {
+
+			$ancestor = $extend_arg->pointer;
+
+			$extend_selectors = $this->selectorList;
+
+			// If there is a pseudo class extension create a new set accordingly
+			if ( $extend_arg->pseudo ) {
+
+				$extend_selectors = array();
+				foreach ( $this->selectorList as $readable => $selector ) {
+					$new_selector = clone $selector;
+					$new_readable = $new_selector->appendPseudo( $extend_arg->pseudo );
+					$extend_selectors[ $new_readable ] = $new_selector;
+				}
+			}
+
+			$ancestor->addSelectors( $extend_selectors );
 		}
 	}
 
@@ -472,6 +633,14 @@ class csscrush_rule implements IteratorAggregate {
 		return new ArrayIterator( $this->declarations );
 	}
 
+
+	############
+	#  Countable
+
+	public function count() {
+
+		return count( $this->_declarations );
+	}
 
 	############
 	#  Rule API
@@ -535,7 +704,6 @@ class csscrush_declaration {
 	public $skip;
 	public $important;
 	public $parenTokens;
-
 	public $isValid = true;
 
 	public function __construct ( $prop, $value ) {
@@ -582,7 +750,7 @@ class csscrush_declaration {
 
 		// Apply custom functions
 		if ( ! $skip ) {
-			$value = csscrush_function::parseAndExecuteValue( $value );
+			csscrush_function::executeCustomFunctions( $value );
 		}
 
 		// Tokenize all remaining paren pairs
@@ -625,15 +793,11 @@ class csscrush_declaration {
  * Selector objects
  *
  */
-
 class csscrush_selector {
 
 	public $value;
-
 	public $readableValue;
-
 	public $allowPrefix = true;
-
 
 	public static function makeReadableSelector ( $selector_string ) {
 
@@ -649,6 +813,11 @@ class csscrush_selector {
 		// Quick test for string tokens
 		if ( strpos( $selector_string, '___s' ) !== false ) {
 			$selector_string = csscrush_util::tokenReplaceAll( $selector_string, 'strings' );
+		}
+
+		// Quick test for double-colons for backwards compat
+		if ( strpos( $selector_string, '::' ) !== false ) {
+			$selector_string = preg_replace( '!::(after|before|first-(?:letter|line))!', ':$1', $selector_string );
 		}
 
 		return $selector_string;
@@ -670,7 +839,51 @@ class csscrush_selector {
 
 		return $this->readableValue;
 	}
+
+	public function appendPseudo ( $pseudo ) {
+
+		// Check to avoid doubling-up
+		if ( ! csscrush_util::strEndsWith( $this->readableValue, $pseudo ) ) {
+
+			$this->readableValue .= $pseudo;
+			$this->value .= $pseudo;
+		}
+		return $this->readableValue;
+	}
 }
 
+
+
+/**
+ *
+ * Extend argument objects
+ *
+ */
+class csscrush_extendArg {
+
+	public $pointer;
+	public $name;
+	public $pseudo;
+
+	public function __construct ( $name ) {
+
+		$this->name = $name;
+
+		if ( ! preg_match( csscrush_regex::$patt->name, $this->name ) ) {
+
+			// Not a regular name: Some kind of selector so normalize it for later comparison
+			$this->name = csscrush_selector::makeReadableSelector( $this->name );
+
+			// If applying the pseudo on output store
+			if ( substr( $this->name, -1 ) === '!' ) {
+
+				$this->name = rtrim( $this->name, ' !' );
+				if ( preg_match( '!\:\:?[\w-]+$!', $this->name, $m ) ) {
+					$this->pseudo = $m[0];
+				}
+			}
+		}
+	}
+}
 
 

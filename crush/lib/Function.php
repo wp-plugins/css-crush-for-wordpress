@@ -14,15 +14,10 @@ class csscrush_function {
 	public static $functionList;
 
 	public static function init () {
+
 		// Set the custom function regex pattern
 		self::$functionList = self::getFunctions();
-		self::$functionPatt = self::createFunctionMatchPatt( self::$functionList );
-	}
-
-	public static function createFunctionMatchPatt ( $list, $include_unnamed_function = true ) {
-
-		$question = $include_unnamed_function ? '?' : '';
-		return '!(^|[^a-z0-9_-])(' . implode( '|', $list ) . ')' . $question . '\(!i';
+		self::$functionPatt = csscrush_regex::createFunctionMatchPatt( self::$functionList, true );
 	}
 
 	public static function getFunctions () {
@@ -40,16 +35,21 @@ class csscrush_function {
 		return $fn_methods;
 	}
 
-	public static function parseCustomFunctions ( $str, $patt, $process_callback = null ) {
+	public static function executeCustomFunctions ( &$str, $patt = null, $process_callback = null, $property = null ) {
 
 		// No bracketed expressions, early return
 		if ( false === strpos( $str, '(' ) ) {
-			return $str;
+			return;
+		}
+
+		// Set default pattern if not set
+		if ( is_null( $patt ) ) {
+			$patt = csscrush_function::$functionPatt;
 		}
 
 		// No custom functions, early return
 		if ( ! preg_match( $patt, $str ) ) {
-			return $str;
+			return;
 		}
 
 		// Need a space inside the front function paren for the following match_all to be reliable
@@ -78,6 +78,7 @@ class csscrush_function {
 			$paren_score = 0;
 
 			for ( $index = $first_paren_offset; $index < strlen( $str ); $index++ ) {
+
 				$char = $str[ $index ];
 				if ( '(' === $char ) {
 					$paren_score++;
@@ -87,6 +88,7 @@ class csscrush_function {
 				}
 
 				if ( 0 === $paren_score ) {
+
 					// Get the function inards
 					$content_start = $offset + strlen( $before_char ) + strlen( $raw_fn_name ) + 1;
 					$content_finish = $index;
@@ -103,6 +105,7 @@ class csscrush_function {
 					$result = '';
 					
 					if ( ! $process_callback ) {
+
 						// If no callback reference it's a built-in
 						if ( in_array( $fn_name, self::$functionList ) ) {
 							$fn_name_clean = str_replace( '-', '_', $fn_name );
@@ -110,7 +113,9 @@ class csscrush_function {
 						}
 					}
 					else {
-						$result = call_user_func( $process_callback, $content );
+						if ( isset( $process_callback[ $fn_name ] ) ) {
+							$result = call_user_func( $process_callback[ $fn_name ], $content, $fn_name, $property );
+						}
 					}
 
 					// Join together the result
@@ -125,32 +130,14 @@ class csscrush_function {
 			$str = str_replace( '( ', '(', $str );
 		}
 
-		return $str;
-		
+		// return $str;
 	} 
-
-	public static function parseAndExecuteValue ( $str ) {
-		return self::parseCustomFunctions( $str, self::$functionPatt );
-	}
 
 
 	############
 	#  Helpers
 
-	protected static function parseMathArgs ( $input ) {
-		// Split on comma, trim, and remove empties
-		$args = array_filter( array_map( 'trim', explode( ',', $input ) ) );
-
-		// Pass anything non-numeric through math
-		foreach ( $args as &$arg ) {
-			if ( !preg_match( '!^-?[\.0-9]+$!', $arg ) ) {
-				$arg = self::css_fn__math( $arg );
-			}
-		}
-		return $args;
-	}
-
-	protected static function parseArgs ( $input, $allowSpaceDelim = false ) {
+	public static function parseArgs ( $input, $allowSpaceDelim = false ) {
 
 		$args = csscrush_util::splitDelimList( 
 			$input, 
@@ -158,9 +145,14 @@ class csscrush_function {
 			true, 
 			true );
 
-		// return array_map( 'trim', $args->list );
-		
 		return $args->list;
+	}
+
+	// Intended as a quick arg-list parse for function that take up-to 2 arguments
+	// with the proviso the first argument is a name
+	public static function parseArgsSimple ( $input ) {
+
+		return preg_split( csscrush_regex::$patt->argListSplit, $input, 2 );
 	}
 
 	protected static function colorAdjust ( $color, array $adjustments ) {
@@ -254,8 +246,9 @@ class csscrush_function {
 	############
 
 	public static function css_fn__math ( $input ) {
-		// Whitelist allowed characters
-		$input = preg_replace( '![^\.0-9\*\/\+\-\(\)]!', '', $input );
+
+		// Strip blacklisted characters
+		$input = preg_replace( csscrush_regex::$patt->mathBlacklist, '', $input );
 
 		$result = @eval( "return $input;" );
 		
@@ -264,7 +257,12 @@ class csscrush_function {
 
 	public static function css_fn__percent ( $input ) {
 
-		$args = self::parseMathArgs( $input );
+		// Strip non-numeric and non delimiter characters
+		$input = preg_replace( '![^\d\.\s,]!S', '', $input );
+
+		$args = preg_split( csscrush_regex::$patt->argListSplit, $input, -1, PREG_SPLIT_NO_EMPTY );
+
+		// csscrush::log( $input );
 
 		// Use precision argument if it exists, use default otherwise
 		$precision = isset( $args[2] ) ? $args[2] : 5;
@@ -273,7 +271,7 @@ class csscrush_function {
 		$result = 0;
 
 		// Need to check arguments or we may see divide by zero errors
-		if ( count( $args ) > 1 && !empty( $args[0] ) && !empty( $args[1] ) ) {
+		if ( count( $args ) > 1 && ! empty( $args[0] ) && ! empty( $args[1] ) ) {
 
 			// Use bcmath if it's available for higher precision
 
@@ -303,7 +301,7 @@ class csscrush_function {
 
 	// Percent function alias
 	public static function css_fn__pc ( $input ) {
-		return self::css_fn_percent( $input );
+		return self::css_fn__percent( $input );
 	}
 
 	public static function css_fn__data_uri ( $input ) {
@@ -340,7 +338,7 @@ class csscrush_function {
 
 		// Only allow certain extensions
 		$allowed_file_extensions = array(
-			'woff' => 'font/woff;charset=utf-8',
+			'woff' => 'application/x-font-woff;charset=utf-8',
 			'ttf'  => 'font/truetype;charset=utf-8',
 			'svg'  => 'image/svg+xml',
 			'svgz' => 'image/svg+xml',
@@ -349,7 +347,7 @@ class csscrush_function {
 			'jpg'  => 'image/jpg',
 			'png'  => 'image/png',
 		);
-		if ( !array_key_exists( $file_ext, $allowed_file_extensions ) ) {
+		if ( ! array_key_exists( $file_ext, $allowed_file_extensions ) ) {
 			return $result;
 		}
 
@@ -360,23 +358,33 @@ class csscrush_function {
 		return "url(\"$data_uri\")";
 	}
 
+	public static function css_fn__hsla_adjust ( $input ) {
+		list( $color, $h, $s, $l, $a ) = array_pad( self::parseArgs( $input, true ), 5, 0 );
+		return self::colorAdjust( $color, array( $h, $s, $l, $a ) );
+	}
+
+	public static function css_fn__hsl_adjust ( $input ) {
+		list( $color, $h, $s, $l ) = array_pad( self::parseArgs( $input, true ), 4, 0 );
+		return self::colorAdjust( $color, array( $h, $s, $l, 0 ) );
+	}
+
 	public static function css_fn__h_adjust ( $input ) {
-		@list( $color, $h ) = self::parseArgs( $input, true );
+		list( $color, $h ) = array_pad( self::parseArgs( $input, true ), 2, 0 );
 		return self::colorAdjust( $color, array( $h, 0, 0, 0 ) );
 	}
 
 	public static function css_fn__s_adjust ( $input ) {
-		@list( $color, $s ) = self::parseArgs( $input, true );
+		list( $color, $s ) = array_pad( self::parseArgs( $input, true ), 2, 0 );
 		return self::colorAdjust( $color, array( 0, $s, 0, 0 ) );
 	}
 
 	public static function css_fn__l_adjust ( $input ) {
-		@list( $color, $l ) = self::parseArgs( $input, true );
+		list( $color, $l ) = array_pad( self::parseArgs( $input, true ), 2, 0 );
 		return self::colorAdjust( $color, array( 0, 0, $l, 0 ) );
 	}
 	
 	public static function css_fn__a_adjust ( $input ) {
-		@list( $color, $a ) = self::parseArgs( $input, true );
+		list( $color, $a ) = array_pad( self::parseArgs( $input, true ), 2, 0 );
 		return self::colorAdjust( $color, array( 0, 0, 0, $a ) );
 	}
 

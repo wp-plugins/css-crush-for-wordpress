@@ -11,6 +11,8 @@ class csscrush_mixin {
 
 	public $arguments;
 
+	public $data = array();
+
 	public function __construct ( $block ) {
 
 		// Strip comment markers
@@ -51,9 +53,16 @@ class csscrush_mixin {
 				$this->declarationsTemplate[] = $declaration;
 			}
 		}
+
+		// Create data table for the mixin.
+		// Values that use arg() are excluded
+		foreach ( $this->declarationsTemplate as &$declaration ) {
+			if ( ! preg_match( csscrush_regex::$patt->argToken, $declaration['value'] ) ) {
+				$this->data[ $declaration['property'] ] = $declaration['value'];
+			}
+		}
 		return '';
 	}
-
 
 	public function call ( array $args ) {
 
@@ -73,7 +82,6 @@ class csscrush_mixin {
 		// Return mixin declarations
 		return $declarations;
 	}
-
 
 	public static function parseSingleValue ( $message ) {
 
@@ -147,13 +155,11 @@ class csscrush_mixin {
 		$args = array();
 		if ( $message !== '' ) {
 			$args = csscrush_util::splitDelimList( $message, ',', true, true );
-			// $args = array_map( 'trim', $args->list );
 			$args = $args->list;
 		}
 
 		return $mixin->call( $args );
 	}
-
 
 	public static function parseValue ( $message ) {
 
@@ -231,36 +237,30 @@ class csscrush_arglist implements Countable {
 	// The string passed in with arg calls replaced by tokens
 	public $string;
 
-	// The arg matching regex
-	protected static $argRegex;
-
-	public static function init () {
-
-		// Create regex pattern for matching 'arg' functions
-		self::$argRegex = csscrush_function::createFunctionMatchPatt( array( 'arg' ), false );
-	}
-
 	function __construct ( $str ) {
 
 		// Parse all arg function calls in the passed string, callback creates default values
-		$this->string = csscrush_function::parseCustomFunctions(
-												$str, self::$argRegex, array( $this, 'store' ) );
+		csscrush_function::executeCustomFunctions( $str, 
+				csscrush_regex::$patt->argFunction, array( 'arg' => array( $this, 'store' ) ) );
+		$this->string = $str;
 	}
 
 	public function store ( $raw_argument ) {
 
+		$args = csscrush_function::parseArgsSimple( $raw_argument );
+
 		// Match the argument index integer
-		if ( ! preg_match( '!^[0-9]+!', $raw_argument, $position_match ) ) {
+		if ( ! ctype_digit( $args[0] ) ) {
+
 			// On failure to match an integer, return an empty string
 			return '';
 		}
 
 		// Get the match from the array
-		$position_match = $position_match[0];
+		$position_match = $args[0];
 
 		// Store the default value
-		$default_value = substr( $raw_argument, strlen( $position_match ) );
-		$default_value = $default_value ? ltrim( $default_value, " ,\t\n\r" ) : null;
+		$default_value = isset( $args[1] ) ? $args[1] : null;
 
 		if ( ! is_null( $default_value ) ) {
 			$this->defaults[ $position_match ] = trim( $default_value );
@@ -274,9 +274,22 @@ class csscrush_arglist implements Countable {
 		return "___arg{$position_match}___";
 	}
 
-	public function getDefaultValue ( $index ) {
+	public function getArgValue ( $index, &$args ) {
 
-		return isset( $this->defaults[ $index ] ) ? $this->defaults[ $index ] : '';
+		// First lookup a passed value
+		if ( isset( $args[ $index ] ) && $args[ $index ] !== 'default' ) {
+			return $args[ $index ];
+		}
+
+		// Get a default value
+		$default = isset( $this->defaults[ $index ] ) ? $this->defaults[ $index ] : '';
+
+		// Recurse for nested arg() calls
+		if ( preg_match( csscrush_regex::$patt->argToken, $default, $m ) ) {
+
+			$default = $this->getArgValue( (int) $m[1], $args );
+		}
+		return $default;
 	}
 
 	public function getSubstitutions ( $args ) {
@@ -290,13 +303,7 @@ class csscrush_arglist implements Countable {
 		foreach ( $argIndexes as $index ) {
 
 			$find[] = "___arg{$index}___";
-
-			if ( isset( $args[ $index ] ) && $args[ $index ] !== 'default' ) {
-				$replace[] = $args[ $index ];
-			}
-			else {
-				$replace[] = $this->getDefaultValue( $index );
-			}
+			$replace[] = $this->getArgValue( $index, $args );
 		}
 
 		return array( $find, $replace );

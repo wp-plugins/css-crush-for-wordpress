@@ -12,7 +12,6 @@ class csscrush {
 
 	// Properties available to each process
 	public static $process;
-	public static $options;
 	public static $storage;
 
 	// Internal
@@ -45,10 +44,37 @@ class csscrush {
 		self::$config->aliases = array();
 		self::$config->aliasesRaw = array();
 
+		// Default options
+		self::$config->options = (object) array(
+
+			// Minify. Set true for formatting and comments
+			'debug' => false,
+
+			// Append 'checksum' to output file name
+			'versioning' => true,
+
+			// Use the template boilerplate
+			'boilerplate' => true,
+
+			// Variables passed in at runtime
+			'vars' => array(),
+
+			// Enable/disable the cache
+			'cache' => true,
+
+			// Output file. Defaults the host-filename
+			'output_file' => null,
+
+			// Vendor target. Only apply prefixes for a specific vendor, set to 'none' for no prefixes
+			'vendor_target' => 'all',
+
+			// Whether to rewrite the url references inside imported files
+			'rewrite_import_urls' => true,
+		);
+
 		// Initialise other classes
 		csscrush_regex::init();
 		csscrush_function::init();
-		csscrush_arglist::init();
 	}
 
 
@@ -119,7 +145,9 @@ class csscrush {
 
 		// Load aliases file if it exists
 		if ( $aliases_file ) {
+
 			if ( $result = @parse_ini_file( $aliases_file, true ) ) {
+
 				self::$config->aliasesRaw = $result;
 
 				// Value aliases require a little preprocessing
@@ -131,6 +159,14 @@ class csscrush {
 					}
 					self::$config->aliasesRaw[ 'values' ] = $store;
 				}
+
+				// Ensure all alias groups are at least set (issue #34)
+				self::$config->aliasesRaw += array(
+					'properties' => array(),
+					'functions'  => array(),
+					'values'     => array(),
+					'at-rules'   => array(),
+					);
 			}
 			else {
 				trigger_error( __METHOD__ . ": Aliases file could not be parsed.\n", E_USER_NOTICE );
@@ -212,7 +248,7 @@ class csscrush {
 
 		$config = self::$config;
 		$process = self::$process;
-		$options = self::$options;
+		$options = $process->options;
 		$doc_root = $config->docRoot;
 
 		// Since we're comparing strings, we need to iron out OS differences
@@ -225,7 +261,7 @@ class csscrush {
 			$pathtest = self::setPath( dirname( $file ) );
 		}
 		else if ( strpos( $file, '/' ) === 0 ) {
-			// WWW root path			;
+			// WWW root path
 			$pathtest = self::setPath( dirname( $doc_root . $file ) );
 		}
 		else {
@@ -250,7 +286,7 @@ class csscrush {
 		// Used in validateCache, and writing to filesystem
 		$process->outputFileName = csscrush::io_call( 'getOutputFileName' );
 
-		if ( $options[ 'cache' ] === true ) {
+		if ( $options->cache === true ) {
 
 			// If cache is enabled check for a valid compiled file
 			$valid_compliled_file = csscrush::io_call( 'validateExistingOutput' );
@@ -268,7 +304,7 @@ class csscrush {
 
 		// Create file and return url. Return empty string on failure
 		if ( file_put_contents( "$process->outputDir/$process->outputFileName", $stream ) ) {
-			$timestamp = $options[ 'versioning' ] ? '?' . time() : '';
+			$timestamp = $options->versioning ? '?' . time() : '';
 			return "$process->outputDirUrl/$process->outputFileName$timestamp";
 		}
 		else {
@@ -372,11 +408,11 @@ class csscrush {
 
 		$config = self::$config;
 		$process = self::$process;
-		$options = self::$options;
+		$options = $process->options;
 
 		// Set the path context if one is given
-		if ( isset( $options[ 'context' ] ) && ! empty( $options[ 'context' ] ) ) {
-			self::setPath( $options[ 'context' ] );
+		if ( isset( $options->context ) && ! empty( $options->context ) ) {
+			self::setPath( $options->context );
 		}
 
 		// It's not associated with a real file so we create an 'empty' input object
@@ -386,7 +422,7 @@ class csscrush {
 		$process->input->string = $string;
 
 		// Import files may be ignored
-		if ( isset( $options[ 'no_import' ] ) ) {
+		if ( isset( $options->no_import ) ) {
 			$process->input->importIgnore = true;
 		}
 
@@ -437,7 +473,7 @@ class csscrush {
 
 	public static $logging = false;
 
-	public static function log () {
+	public static function log ( $arg = null, $label = '' ) {
 
 		if ( ! self::$logging ) {
 			return;
@@ -445,13 +481,15 @@ class csscrush {
 		static $log = '';
 
 		$args = func_get_args();
-		if ( !count( $args ) ) {
+		if ( ! count( $args ) ) {
 			// No arguments, return the log
 			return $log;
 		}
-		else {
-			$arg = $args[0];
+
+		if ( $label ) {
+			$log .= "<h4>$label</h4>";
 		}
+
 		if ( is_string( $arg ) ) {
 			$log .= $arg . '<hr>';
 		}
@@ -474,11 +512,19 @@ class csscrush {
 	#####################
 	#  Internal functions
 
+	public static function prepareStream ( &$stream ) {
+
+		$stream = preg_replace_callback( csscrush_regex::$patt->commentAndString,
+			array( 'self', 'cb_extractCommentAndString' ), $stream );
+
+		$stream = csscrush_util::normalizeWhiteSpace( $stream );
+	}
+
 	protected static function getBoilerplate () {
 
 		$file = csscrush_util::find( 'CssCrush-local.boilerplate', 'CssCrush.boilerplate' );
 
-		if ( ! $file || ! self::$options[ 'boilerplate' ] ) {
+		if ( ! $file || ! self::$process->options->boilerplate ) {
 			return '';
 		}
 
@@ -518,47 +564,30 @@ TPL;
 
 	protected static function getOptions ( $options ) {
 
-		// Create default options for those not set
-		$option_defaults = array(
+		if ( ! is_array( $options ) ) {
+			$options = array();
+		}
 
-			// Minify. Set true for formatting and comments
-			'debug' => false,
+		// Keeping track of global vars internally to maintain cache integrity
+		$options[ '_globalVars' ] = self::$config->vars;
 
-			// Append 'checksum' to output file name
-			'versioning' => true,
+		// Populate unset options with defaults
+		$options += (array) self::$config->options;
 
-			// Use the template boilerplate
-			'boilerplate' => true,
-
-			// Variables passed in at runtime
-			'vars' => array(),
-
-			// Enable/disable the cache
-			'cache' => true,
-
-			// Output file. Defaults the host-filename
-			'output_file' => null,
-
-			// Vendor target. Only apply prefixes for a specific vendor, set to 'none' for no prefixes
-			'vendor_target' => 'all',
-
-			// Whether to rewrite the url references inside imported files
-			// This will probably be 'true' by default eventually
-			'rewrite_import_urls' => true,
-
-			// Keeping track of global vars internally
-			'_globalVars' => self::$config->vars,
-		);
-
-		return is_array( $options ) ?
-			array_merge( $option_defaults, $options ) : $option_defaults;
-
+		return (object) $options;
 	}
 
 	protected static function pruneAliases () {
 
+		$options = self::$process->options;
+
 		// If a vendor target is given, we prune the aliases array
-		$vendor = self::$options[ 'vendor_target' ];
+		$vendor = $options->vendor_target;
+
+		// Default vendor argument, use all aliases as normal
+		if ( 'all' === $vendor ) {
+			return;
+		}
 
 		// For expicit 'none' argument turn off aliases
 		if ( 'none' === $vendor ) {
@@ -566,17 +595,12 @@ TPL;
 			return;
 		}
 
-		// Default vendor argument, use all aliases as normal
-		if ( 'all' === $vendor ) {
-			return;
-		}
-
 		// Normalize vendor_target argument
-		$vendor = str_replace( '-', '', self::$options[ 'vendor_target' ] );
-		$vendor = "-$vendor-";
+		$vendor = '-' . str_replace( '-', '', $vendor ) . '-';
 
 		// Loop the aliases array, filter down to the target vendor
 		foreach ( self::$config->aliases as $group_name => $group_array ) {
+
 			// Property/value aliases are a special case
 			if ( 'values' === $group_name ) {
 				foreach ( $group_array as $property => $values ) {
@@ -593,6 +617,7 @@ TPL;
 				continue;
 			}
 			foreach ( $group_array as $alias_keyword => $prefix_array ) {
+
 				$result = array();
 				foreach ( $prefix_array as $prefix ) {
 					if ( strpos( $prefix, $vendor ) === 0 ) {
@@ -612,13 +637,15 @@ TPL;
 
 	protected static function calculateVariables () {
 
+		$options = self::$process->options;
+
 		// In-file variables override global variables
 		// Runtime variables override in-file variables
 		self::$storage->variables = array_merge( self::$config->vars, self::$storage->variables );
 
-		if ( !empty( self::$options[ 'vars' ] ) ) {
+		if ( ! empty( $options->vars ) ) {
 			self::$storage->variables = array_merge(
-				self::$storage->variables, self::$options[ 'vars' ] );
+				self::$storage->variables, $options->vars );
 		}
 
 		// Place variables referenced inside variables
@@ -634,25 +661,33 @@ TPL;
 				$value = ltrim( $value, "!\t\r " );
 			}
 			else {
-				$value = csscrush_function::parseAndExecuteValue( $value );
+				csscrush_function::executeCustomFunctions( $value );
 			}
 		}
 	}
 
-	protected static function placeVariables ( $stream ) {
+	protected static function placeVariables ( &$stream ) {
 
+		// Substitute simple case variables
 		$stream = preg_replace_callback(
 			csscrush_regex::$patt->varFunction, array( 'self', 'cb_placeVariables' ), $stream );
 
-		// Place variables in any string tokens
+		// Substitute variables with default values
+		$var_fn_patt = csscrush_regex::createFunctionMatchPatt( array( '$' ) );
+		$var_fn_callback = array( '$' => array( 'csscrush', 'cb_varFunctionWithDefault' ) );
+		csscrush_function::executeCustomFunctions( $stream, $var_fn_patt, $var_fn_callback );
+
+		// Repeat above steps for variables embedded in string tokens
 		foreach ( self::$storage->tokens->strings as $label => &$string ) {
-			if ( strpos( $string, '$' ) !== false ) {
+
+			if ( strpos( $string, '$(' ) !== false ) {
+
 				$string = preg_replace_callback(
 					csscrush_regex::$patt->varFunction,
-					array( 'self', 'cb_placeVariables' ), $string );
+						array( 'self', 'cb_placeVariables' ), $string );
+				csscrush_function::executeCustomFunctions( $string, $var_fn_patt, $var_fn_callback );
 			}
 		}
-		return $stream;
 	}
 
 	protected static function reset ( $options = null ) {
@@ -660,15 +695,16 @@ TPL;
 		// Reset properties for current process
 		self::$tokenUID = 0;
 
-		self::$process = new stdclass();
+		self::$process = (object) array();
 		self::$process->cacheData = array();
 		self::$process->mixins = array();
-		self::$process->fragments = array();
 		self::$process->abstracts = array();
 		self::$process->errors = array();
 		self::$process->selectorRelationships = array();
+		self::$process->charset = null;
+		self::$process->options = self::getOptions( $options );
 
-		self::$storage = new stdclass();
+		self::$storage = (object) array();
 		self::$storage->tokens = (object) array(
 			'strings'   => array(),
 			'comments'  => array(),
@@ -678,15 +714,13 @@ TPL;
 			'urls'      => array(),
 		);
 		self::$storage->variables = array();
-		self::$storage->misc = new stdclass();
-
-		// Load the merged options
-		self::$options = self::getOptions( $options );
+		self::$storage->misc = (object) array();
 	}
 
 	protected static function compile ( $stream ) {
 
-		$options = self::$options;
+		$process = self::$process;
+		$options = $process->options;
 
 		// Load in aliases and macros
 		if ( ! self::$assetsLoaded ) {
@@ -694,42 +728,41 @@ TPL;
 			self::$assetsLoaded = true;
 		}
 
-		// Set aliases. May be pruned if a vendor target is set
+		// Set aliases
 		self::$config->aliases = self::$config->aliasesRaw;
+
+		// Prune if a vendor target is set
 		self::pruneAliases();
 
 		// Parse variables
-		$stream = self::extractVariables( $stream );
+		self::extractVariables( $stream );
 
 		// Calculate the variable stack
 		self::calculateVariables();
 
 		// Place the variables
-		$stream = self::placeVariables( $stream );
+		self::placeVariables( $stream );
 
 		// Pull out the mixin declarations
-		$stream = self::extractMixins( $stream );
+		self::extractMixins( $stream );
 
-		// Pull out the fragments
-		$stream = self::extractFragments( $stream );
-
-		// Normalize whitespace
-		$stream = csscrush_util::normalizeWhiteSpace( $stream );
+		// Process fragments
+		self::resolveFragments( $stream );
 
 		// Adjust the stream so we can extract the rules cleanly
 		$map = array(
 			'@' => "\n@",
 			'}' => "}\n",
 			'{' => "{\n",
-			';' => ";\n",
+			// ';' => ";\n",
 		);
 		$stream = "\n" . str_replace( array_keys( $map ), array_values( $map ), $stream );
 
 		// Rules
-		$stream = self::extractRules( $stream );
+		self::extractRules( $stream );
 
 		// Process any @-in blocks
-		$stream = self::prefixSelectors( $stream );
+		self::prefixSelectors( $stream );
 
 		// Main processing on the rule objects
 		self::processRules();
@@ -737,25 +770,34 @@ TPL;
 		// csscrush::log( array_keys( self::$process->selectorRelationships ) );
 
 		// Alias any @-rules
-		$stream = self::aliasAtRules( $stream );
+		self::aliasAtRules( $stream );
 
 		// Print it all back
-		$stream = self::display( $stream );
+		self::display( $stream );
 
 		// Add in boilerplate
-		if ( $options[ 'boilerplate' ] ) {
+		if ( $options->boilerplate ) {
 			$stream = self::getBoilerplate() . "\n$stream";
+		}
+
+		// Add @charset at top if set
+		if ( $process->charset ) {
+			$stream = "@charset \"{$process->charset}\";\n" . $stream;
 		}
 
 		// Release memory
 		self::$storage = null;
+		$process->mixins = null;
+		$process->abstracts = null;
+		$process->selectorRelationships = null;
 
 		return $stream;
 	}
 
-	protected static function display ( $stream ) {
+	protected static function display ( &$stream ) {
 
-		$minify = ! self::$options[ 'debug' ];
+		$options = self::$process->options;
+		$minify = ! $options->debug;
 		$regex = csscrush_regex::$patt;
 
 		if ( $minify ) {
@@ -802,7 +844,10 @@ TPL;
 			foreach ( csscrush::$storage->tokens->urls as $token => $url ) {
 
 				// Optionally set the URLs to absolute
-				if ( self::$options[ 'rewrite_import_urls' ] === 'absolute' ) {
+				if (
+					$options->rewrite_import_urls === 'absolute' &&
+					strpos( $url, 'data:' ) !== 0
+				) {
 					$url = self::$process->inputDirUrl . '/' . $url;
 				}
 				csscrush::$storage->tokens->urls[ $token ] = csscrush_util::cleanUpUrl( $url );
@@ -813,8 +858,6 @@ TPL;
 		// Insert string literals
 		$stream = csscrush_util::strReplaceHash( $stream, self::$storage->tokens->strings );
 
-		// I think we're done
-		return $stream;
 	}
 
 	protected static function minify ( $str ) {
@@ -833,10 +876,10 @@ TPL;
 			array_keys( $replacements ), array_values( $replacements ), $str );
 	}
 
-	protected static function aliasAtRules ( $stream ) {
+	protected static function aliasAtRules ( &$stream ) {
 
 		if ( empty( self::$config->aliases[ 'at-rules' ] ) ) {
-			return $stream;
+			return;
 		}
 
 		$aliases = self::$config->aliases[ 'at-rules' ];
@@ -928,10 +971,9 @@ TPL;
 			} // while
 
 		} // foreach
-		return $stream;
 	}
 
-	protected static function prefixSelectors ( $stream ) {
+	protected static function prefixSelectors ( &$stream ) {
 
 		$matches = csscrush_regex::matchAll( '@in\s+([^\{]+){', $stream, true );
 
@@ -1009,8 +1051,6 @@ TPL;
 			// Concatenate
 			$stream = $before . $curly_match->inside . $curly_match->after;
 		}
-
-		return $stream;
 	}
 
 	public static function tokenLabelCreate ( $prefix ) {
@@ -1031,6 +1071,7 @@ TPL;
 			csscrush_hook::run( 'rule_prealias', $rule );
 
 			if ( ! empty( self::$config->aliases ) ) {
+
 				$rule->addPropertyAliases();
 				$rule->addFunctionAliases();
 				$rule->addValueAliases();
@@ -1051,34 +1092,44 @@ TPL;
 	#############################
 	#  preg_replace callbacks
 
-	protected static function cb_extractStrings ( $match ) {
-		$label = csscrush::tokenLabelCreate( 's' );
-		csscrush::$storage->tokens->strings[ $label ] = $match[0];
-		return $label;
-	}
+	protected static function cb_extractCommentAndString ( $match ) {
 
-	protected static function cb_restoreStrings ( $match ) {
-		return csscrush::$storage->tokens->strings[ $match[0] ];
-	}
+		$capture = $match[0];
 
-	protected static function cb_extractComments ( $match ) {
+		if ( strpos( $capture, '/*' ) === 0 ) {
 
-		$comment = $match[0];
+			// Strip private comments
+			$private_comment_marker = '$!';
 
-		// Strip private comments
-		$private_comment_marker = '$!';
-		if ( strpos( $comment, '/*' . $private_comment_marker ) === 0 ) {
-			return '';
+			if (
+				strpos( $capture, '/*' . $private_comment_marker ) === 0 ||
+				! self::$process->options->debug
+			) {
+				return '';
+			}
+
+			$label = self::tokenLabelCreate( 'c' );
+			self::$storage->tokens->comments[ $label ] = $capture;
+		}
+		else {
+
+			$label = csscrush::tokenLabelCreate( 's' );
+			csscrush::$storage->tokens->strings[ $label ] = $capture;
 		}
 
-		$label = self::tokenLabelCreate( 'c' );
-		self::$storage->tokens->comments[ $label ] = $comment;
-
 		return $label;
 	}
 
-	protected static function cb_restoreComments ( $match ) {
-		return self::$storage->tokens->comments[ $match[0] ];
+	protected static function cb_extractMixins ( $match ) {
+
+		$name = trim( $match[1] );
+		$block = trim( $match[2] );
+
+		if ( ! empty( $name ) && ! empty( $block ) ) {
+			self::$process->mixins[ $name ] = new csscrush_mixin( $block );
+		}
+
+		return '';
 	}
 
 	protected static function cb_extractVariables ( $match ) {
@@ -1106,23 +1157,13 @@ TPL;
 		return '';
 	}
 
-	protected static function cb_extractMixins ( $match ) {
-
-		$name = trim( $match[1] );
-		$block = trim( $match[2] );
-
-		if ( ! empty( $name ) && ! empty( $block ) ) {
-			self::$process->mixins[ $name ] = new csscrush_mixin( $block );
-		}
-
-		return '';
-	}
-
 	protected static function cb_placeVariables ( $match ) {
+
 		$before_char = $match[1];
 
 		// Check for dollar shorthand
 		if ( empty( $match[2] ) && isset( $match[3] ) && strpos( $match[0], '$' ) !== false ) {
+
 			$variable_name = $match[3];
 		}
 		else {
@@ -1130,6 +1171,7 @@ TPL;
 		}
 
 		if ( isset( self::$storage->variables[ $variable_name ] ) ) {
+
 			return $before_char . self::$storage->variables[ $variable_name ];
 		}
 		else {
@@ -1137,9 +1179,22 @@ TPL;
 		}
 	}
 
+	public static function cb_varFunctionWithDefault ( $raw_argument ) {
+
+		list( $name, $default_value ) = csscrush_function::parseArgsSimple( $raw_argument );
+
+		if ( isset( self::$storage->variables[ $name ] ) ) {
+
+			return self::$storage->variables[ $name ];
+		}
+		else {
+			return $default_value;
+		}
+	}
+
 	protected static function cb_extractRules ( $match ) {
 
-		$rule = new stdclass();
+		$rule = (object) array();
 		$rule->selector_raw = trim( $match[1] );
 		$rule->declaration_raw = trim( $match[2] );
 
@@ -1148,32 +1203,21 @@ TPL;
 		$rule = new csscrush_rule( $rule->selector_raw, $rule->declaration_raw );
 
 		// Store rules if they have declarations or extend arguments
-		if ( $rule->_declarations || $rule->extendsArgs ) {
+		if ( count( $rule ) || $rule->extendArgs ) {
 
 			$label = $rule->label;
 
 			self::$storage->tokens->rules[ $label ] = $rule;
 
-			if ( $rule->_declarations ) {
-				return $label . "\n";
-			}
-			else {
-				// If only using extend no need to return a label
-				return '';
-			}
+			// If only using extend still return a label
+			return $label . "\n";
 		}
-		else {
-			return '';
-		}
-	}
-
-	protected static function cb_restoreLiteral ( $match ) {
-		return self::$storage->tokens[ $match[0] ];
+		return '';
 	}
 
 	protected static function cb_printRule ( $match ) {
 
-		$minify = ! self::$options[ 'debug' ];
+		$minify = ! self::$process->options->debug;
 		$whitespace = $minify ? '' : ' ';
 
 		$ruleLabel = $match[0];
@@ -1183,10 +1227,10 @@ TPL;
 			return '';
 		}
 
-		$rule = self::$storage->tokens->rules[ $ruleLabel ];
+		$rule =& self::$storage->tokens->rules[ $ruleLabel ];
 
-		// If there are no selectors associated with the rule return empty string
-		if ( empty( $rule->selectorList ) ) {
+		// If there are no selectors or declarations associated with the rule return empty string
+		if ( empty( $rule->selectorList ) || ! count( $rule ) ) {
 			return '';
 		}
 
@@ -1217,29 +1261,22 @@ TPL;
 	############
 	#  Parsing methods
 
-	public static function extractRules ( $stream ) {
-		return preg_replace_callback( csscrush_regex::$patt->rule, array( 'self', 'cb_extractRules' ), $stream );
+	public static function extractRules ( &$stream ) {
+		$stream = preg_replace_callback( csscrush_regex::$patt->rule, array( 'self', 'cb_extractRules' ), $stream );
 	}
 
-	public static function extractVariables ( $stream ) {
-		return preg_replace_callback( csscrush_regex::$patt->variables, array( 'self', 'cb_extractVariables' ), $stream );
+	public static function extractVariables ( &$stream ) {
+		$stream = preg_replace_callback( csscrush_regex::$patt->variables, array( 'self', 'cb_extractVariables' ), $stream );
 	}
 
-	public static function extractComments ( $stream ) {
-		return preg_replace_callback( csscrush_regex::$patt->comment, array( 'self', 'cb_extractComments' ), $stream );
+	public static function extractMixins ( &$stream ) {
+		$stream = preg_replace_callback( csscrush_regex::$patt->mixin, array( 'self', 'cb_extractMixins' ), $stream );
 	}
 
-	public static function extractStrings ( $stream ) {
-		return preg_replace_callback( csscrush_regex::$patt->string, array( 'self', 'cb_extractStrings' ), $stream );
-	}
-
-	public static function extractMixins ( $stream ) {
-		return preg_replace_callback( csscrush_regex::$patt->mixin, array( 'self', 'cb_extractMixins' ), $stream );
-	}
-
-	public static function extractFragments ( $stream ) {
+	public static function resolveFragments ( &$stream ) {
 
 		$matches = csscrush_regex::matchAll( '@fragment\s+(<name>)\s*{', $stream, true );
+		$fragments = array();
 
 		// Move through the matches last to first
 		while ( $match = array_pop( $matches ) ) {
@@ -1263,10 +1300,10 @@ TPL;
 				$stream = $before . $curly_match->after;
 
 				// Create the fragment and store it
-				self::$process->fragments[ $fragment_name ] =
+				$fragments[ $fragment_name ] =
 						new csscrush_fragment( $curly_match->inside );
 
-				// csscrush::log( self::$process->fragments );
+				// csscrush::log( $fragments );
 			}
 		}
 
@@ -1284,7 +1321,7 @@ TPL;
 			$fragment_name = $match[1][0];
 
 			// The fragment object, or null if name not present
-			$fragment = isset( self::$process->fragments[ $fragment_name ] ) ? self::$process->fragments[ $fragment_name ] : null;
+			$fragment = isset( $fragments[ $fragment_name ] ) ? $fragments[ $fragment_name ] : null;
 
 			// Fragment may be called without any argument list
 			$with_arguments = $match[2][0] === '(';
@@ -1322,10 +1359,7 @@ TPL;
 				$stream = $before . $fragment_return . $after;
 			}
 		}
-
-		return $stream;
 	}
-
 }
 
 
