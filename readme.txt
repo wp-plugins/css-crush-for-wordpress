@@ -18,7 +18,7 @@ This plugin will automaticly process all your theme's stylesheets for you! No co
 
 By default your stylesheet will be *minified*, *cached* and have it's vendor *prefixes automatically generated*.
 
-**example of a generated prefixes**
+**examples of generated prefixes**
 
 `
 /* Before */
@@ -33,14 +33,13 @@ div {
 }
 `
 
-**example of the use of variables**
+**example with the use of variables**
 
 `
 /* Defining variables */
 @define {
 	brand-blue: #C1D9F5;	
-	helvetica: "Helvetica Neue", Helvetica, Arial, sans-serif;
-	
+	helvetica: "Helvetica Neue", Helvetica, Arial, sans-serif;	
 }
 
 ul, p {
