@@ -1,0 +1,62 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: CSS Crush for WordPress\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2012-08-30 19:11+0100\n"
+"PO-Revision-Date: 2012-08-30 19:13+0100\n"
+"Last-Translator: Codepress <info@codepress.nl>\n"
+"Language-Team: Codepress <info@codepress.nl>\n"
+"Language: nl_NL\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"X-Poedit-KeywordsList: __\n"
+"X-Poedit-Basepath: .\n"
+"X-Poedit-SourceCharset: UTF-8\n"
+"X-Poedit-SearchPath-0: ..\n"
+
+#: ../css-crush-for-wordpress.php:139 ../css-crush-for-wordpress.php:140
+#: ../css-crush-for-wordpress.php:220
+msgid "CSS Crush"
+msgstr ""
+
+#: ../css-crush-for-wordpress.php:173
+msgid "Settings"
+msgstr "Instellingen"
+
+#: ../css-crush-for-wordpress.php:221
+msgid "Enable CSS Crush"
+msgstr "Zet CSS Crush aan"
+
+#: ../css-crush-for-wordpress.php:226
+msgid "Caching"
+msgstr ""
+
+#: ../css-crush-for-wordpress.php:227
+msgid "Turn caching on or off"
+msgstr "Zet caching aan of uit"
+
+#: ../css-crush-for-wordpress.php:228
+msgid ""
+"When turned on a cached file is returned when a file has not been modified. "
+"This increases performance. Default is <code>on</code>."
+msgstr ""
+"Wanner dit aanstaat zal een gecached versie worden gebruikt als het bestand "
+"niet is aangepast. De bevordert de prestaties. Standaard waarde is "
+"<code>aan</code>."
+
+#: ../css-crush-for-wordpress.php:233
+msgid "Debug Mode"
+msgstr ""
+
+#: ../css-crush-for-wordpress.php:234
+msgid "Turn debug mode on or off"
+msgstr "Zet debug modus aan of uit"
+
+#: ../css-crush-for-wordpress.php:235
+msgid ""
+"You can disable minification by running in debug mode. Default is <code>off</"
+"code>."
+msgstr ""
+"Je kunt minificatie van stylsheets uitzetten in bedug mode. Standaard waarde "
+"is  <code>uit</code>."

@@ -4,7 +4,7 @@ Donate link: https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_i
 Tags: css, crush, wordpress, pre-processor, minify
 Requires at least: 3.1
 Tested up to: 3.4
-Stable tag: 0.2
+Stable tag: 0.3
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -99,6 +99,10 @@ You can fork the original CSS Crush code on Github and submit patches: <a href="
 1. Settings page
 
 == Changelog ==
+
+= 0.3 =
+
+* added bug fix for incorrect stylesheet url
 
 = 0.2 =
 

@@ -1,7 +1,7 @@
 <?php
 /*
 Plugin Name: 		CSS Crush for WordPress
-Version: 			0.2
+Version: 			0.3
 Description: 		Integrates an extensible CSS preprocessor for WordPress: upload, activate, and you're done. No further configuration needed. 
 Author: 			Codepress
 Author URI: 		http://www.codepress.nl
@@ -26,7 +26,7 @@ along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
-define( 'CPCC_VERSION', 	'0.2' );
+define( 'CPCC_VERSION', 	'0.3' );
 define( 'CPCC_TEXTDOMAIN',  'css-crush-for-wordpress' );
 define( 'CPCC_SLUG', 		'css-crush' );
 define( 'CPCC_URL', 		plugins_url('', __FILE__) );
@@ -90,14 +90,26 @@ class Codepress_Crush_CSS
 		// get local path and crush it!
 		$src_local = str_replace(WP_CONTENT_URL, WP_CONTENT_DIR, $src_no_ver);
 		
-		$src 	   = csscrush::file( $src_local, array(
+		// remove possible crushed stylesheets
+		if ( strstr($src, '.crush.css') )
+			return $src;
+		
+		$src = csscrush::file( $src_local, array(
 			'cache'	=> $cache,
 			'debug'	=> $debug,
-		));  
-		
-		return $src;	
-	}
+		)); 		
 
+		// get root url
+		$parse 		= parse_url(get_bloginfo('url'));
+		$port 		= !empty($parse['port']) ? ":{$parse['port']}" : '';
+		$root_url  	= "{$parse['scheme']}://{$parse['host']}{$port}";
+	
+		return $root_url.$src;	
+	}
+	
+
+
+	
 	/**
 	 * Enabled?
 	 *
@@ -213,7 +225,7 @@ class Codepress_Crush_CSS
 				'id'		=> 'cache',
 				'label'		=> __('Caching', CPCC_TEXTDOMAIN),
 				'descr'		=> __('Turn caching on or off', CPCC_TEXTDOMAIN),
-				'note'		=> __('When turned on a cached file is returned when a file has not been monified. This increases performance. Default is <code>on</code>.', CPCC_TEXTDOMAIN),
+				'note'		=> __('When turned on a cached file is returned when a file has not been modified. This increases performance. Default is <code>on</code>.', CPCC_TEXTDOMAIN),
 				'default' 	=> true
 			),
 			array(
